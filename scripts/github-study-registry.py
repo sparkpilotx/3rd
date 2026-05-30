@@ -227,6 +227,37 @@ def write_upsert_repository(
     return record
 
 
+def write_remove_repository(config: Neo4jConfig, key: str) -> RegistryResult:
+    driver = GraphDatabase.driver(  # pyright: ignore[reportUnknownMemberType]
+        config.uri,
+        auth=(config.username, config.password),
+    )
+    try:
+        with driver.session(database=config.database) as session:  # pyright: ignore[reportUnknownMemberType]
+            log.info("remove_repository", database=config.database, key=key)
+            result = session.run(
+                """
+                MATCH (repo:GitHubRepository {key: $key})
+                DELETE repo
+                RETURN count(repo) AS count
+                """,
+                key=key,
+            )
+            record = result.single()
+            count = 0 if record is None else record["count"]
+    except Neo4jError as err:
+        raise AppError(
+            ErrorCode.EXTERNAL,
+            "Could not remove GitHub repository registry record",
+            context={"database": config.database, "key": key, "error": str(err)},
+            suggestion="Run `just registry-init` and retry.",
+        ) from err
+    finally:
+        driver.close()
+
+    return RegistryResult(database=config.database, count=count)
+
+
 def list_repositories(config: Neo4jConfig) -> list[RepositoryRecord]:
     driver = GraphDatabase.driver(  # pyright: ignore[reportUnknownMemberType]
         config.uri,
@@ -308,6 +339,20 @@ def _cmd_upsert(key: str, *, as_json: bool) -> int:
     return 0
 
 
+def _cmd_remove(key: str, *, as_json: bool) -> int:
+    try:
+        config = _load_neo4j_config()
+        result = write_remove_repository(config, _repository_record_from_key(key).key)
+    except AppError as err:
+        _print_error(err, as_json=as_json)
+
+    if as_json:
+        _print_json(result.model_dump())
+    else:
+        print(f"removed: {key}")
+    return 0
+
+
 def _cmd_list(*, as_json: bool) -> int:
     try:
         config = _load_neo4j_config()
@@ -336,6 +381,11 @@ def main() -> int:
     )
     upsert_parser.add_argument("key", help="GitHub repository key as owner/repo")
 
+    remove_parser = subparsers.add_parser(
+        "remove", help="Remove a repository registry record"
+    )
+    remove_parser.add_argument("key", help="GitHub repository key as owner/repo")
+
     subparsers.add_parser("list", help="List registered repository keys")
 
     args = parser.parse_args()
@@ -345,6 +395,8 @@ def main() -> int:
             return _cmd_init(as_json=args.as_json)
         case "upsert":
             return _cmd_upsert(args.key, as_json=args.as_json)
+        case "remove":
+            return _cmd_remove(args.key, as_json=args.as_json)
         case "list":
             return _cmd_list(as_json=args.as_json)
         case _:

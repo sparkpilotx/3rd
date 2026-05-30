@@ -17,6 +17,9 @@ PRE_RELEASE_PATTERN='(alpha|beta|rc|preview|pre|snapshot|nightly|dev|canary)'
 usage() {
   cat <<'USAGE'
 Usage:
+  github-study-repo.sh register OWNER/REPO
+  github-study-repo.sh unregister OWNER/REPO
+  github-study-repo.sh checkout OWNER/REPO
   github-study-repo.sh add OWNER/REPO
   github-study-repo.sh update OWNER/REPO|PATH
   github-study-repo.sh verify OWNER/REPO|PATH
@@ -120,6 +123,12 @@ registry_upsert_key() {
   local key
   key="$(normalize_key "$1")"
   registry_command --json upsert "$key" >/dev/null
+}
+
+registry_remove_key() {
+  local key
+  key="$(normalize_key "$1")"
+  registry_command --json remove "$key" >/dev/null
 }
 
 registered_repo_keys() {
@@ -325,11 +334,24 @@ verify_repo() {
   git -C "$path" remote -v | sed 's/^/  /'
 }
 
-add_repo() {
+register_key() {
   local key
   key="$(normalize_key "$1")"
-  registry_require_ready
+  ensure_reachable "$key"
+  registry_upsert_key "$key"
+  printf 'registered: %s\n' "$key"
+}
 
+unregister_key() {
+  local key
+  key="$(normalize_key "$1")"
+  registry_remove_key "$key"
+  printf 'unregistered: %s\n' "$key"
+}
+
+checkout_repo() {
+  local key
+  key="$(normalize_key "$1")"
   local path
   path="$(path_for_key "$key")"
   local url
@@ -340,8 +362,7 @@ add_repo() {
   fi
 
   if [ -d "$path/.git" ]; then
-    update_repo "$path"
-    registry_upsert_key "$key"
+    verify_repo "$path"
     return
   fi
 
@@ -361,7 +382,18 @@ add_repo() {
   disable_push "$path"
   printf 'selected because: %s\n' "$reason"
   verify_repo "$path"
-  registry_upsert_key "$key"
+}
+
+add_repo() {
+  local key
+  key="$(normalize_key "$1")"
+  registry_require_ready
+  register_key "$key"
+  if [ -d "$(path_for_key "$key")/.git" ]; then
+    update_repo "$(path_for_key "$key")"
+  else
+    checkout_repo "$key"
+  fi
 }
 
 update_repo() {
@@ -392,26 +424,19 @@ select_repo() {
   key="$(normalize_key "$1")"
   ensure_reachable "$key"
 
-  local path
-  path="$(path_for_key "$key")"
-  if [ -d "$path/.git" ]; then
-    git -C "$path" fetch --prune --tags origin
-    select_ref_for_repo "$key" "$path"
-  else
-    local tag branch
-    tag="$(latest_release_tag "$key" || true)"
-    if [ -n "$tag" ]; then
-      printf 'tag %s GitHub Release\n' "$tag"
-      return
-    fi
-    tag="$(latest_stable_remote_tag "$key" || true)"
-    if [ -n "$tag" ]; then
-      printf 'tag %s git tag\n' "$tag"
-      return
-    fi
-    branch="$(default_branch_for_key "$key")"
-    printf 'branch %s default branch\n' "$branch"
+  local tag branch
+  tag="$(latest_release_tag "$key" || true)"
+  if [ -n "$tag" ]; then
+    printf 'tag %s GitHub Release\n' "$tag"
+    return
   fi
+  tag="$(latest_stable_remote_tag "$key" || true)"
+  if [ -n "$tag" ]; then
+    printf 'tag %s git tag\n' "$tag"
+    return
+  fi
+  branch="$(default_branch_for_key "$key")"
+  printf 'branch %s default branch\n' "$branch"
 }
 
 filesystem_repo_paths() {
@@ -495,6 +520,18 @@ main() {
   shift || true
 
   case "$command" in
+    register)
+      [ "$#" -eq 1 ] || die "register expects OWNER/REPO"
+      register_key "$1"
+      ;;
+    unregister)
+      [ "$#" -eq 1 ] || die "unregister expects OWNER/REPO"
+      unregister_key "$1"
+      ;;
+    checkout)
+      [ "$#" -eq 1 ] || die "checkout expects OWNER/REPO"
+      checkout_repo "$1"
+      ;;
     add)
       [ "$#" -eq 1 ] || die "add expects OWNER/REPO"
       add_repo "$1"

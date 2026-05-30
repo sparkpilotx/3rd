@@ -6,25 +6,25 @@ root := justfile_directory()
 default:
     @just --list
 
-# Add or update a GitHub repo as a read-only latest/stable study checkout.
-add owner repo:
-    @"{{root}}/scripts/github-study-repo.sh" add "{{owner}}/{{repo}}"
+# Register a GitHub repo key in the Neo4j collection.
+register-key key:
+    @"{{root}}/scripts/github-study-repo.sh" register "{{key}}"
 
-# Add or update a repo from owner/repo, github.com/owner/repo, or a GitHub URL.
-add-key key:
-    @"{{root}}/scripts/github-study-repo.sh" add "{{key}}"
+# Remove a GitHub repo key from the Neo4j collection without deleting its checkout.
+unregister-key key:
+    @"{{root}}/scripts/github-study-repo.sh" unregister "{{key}}"
 
-# Update an existing checkout by owner and repo.
-update owner repo:
-    @"{{root}}/scripts/github-study-repo.sh" update "{{owner}}/{{repo}}"
+# Create a read-only local checkout for a GitHub repo key if it is missing.
+checkout-key key:
+    @"{{root}}/scripts/github-study-repo.sh" checkout "{{key}}"
 
 # Update an existing checkout from owner/repo or a local path.
 update-key key:
     @"{{root}}/scripts/github-study-repo.sh" update "{{key}}"
 
 # Re-select the latest appropriate upstream ref without changing a checkout.
-select owner repo:
-    @"{{root}}/scripts/github-study-repo.sh" select "{{owner}}/{{repo}}"
+select-key key:
+    @"{{root}}/scripts/github-study-repo.sh" select "{{key}}"
 
 # Create the Neo4j registry database and constraints.
 registry-init:
@@ -38,13 +38,29 @@ registry-import-existing:
 registry-list:
     @"{{root}}/scripts/github-study-repo.sh" registry-list
 
-# Verify readonly state and current ref.
-verify owner repo:
-    @"{{root}}/scripts/github-study-repo.sh" verify "{{owner}}/{{repo}}"
-
 # Verify from owner/repo or a local path.
 verify-key key:
     @"{{root}}/scripts/github-study-repo.sh" verify "{{key}}"
+
+# Add or update a GitHub repo as a read-only latest/stable study checkout.
+add owner repo:
+    @"{{root}}/scripts/github-study-repo.sh" add "{{owner}}/{{repo}}"
+
+# Add or update a repo from owner/repo, github.com/owner/repo, or a GitHub URL.
+add-key key:
+    @"{{root}}/scripts/github-study-repo.sh" add "{{key}}"
+
+# Update an existing checkout by owner and repo.
+update owner repo:
+    @"{{root}}/scripts/github-study-repo.sh" update "{{owner}}/{{repo}}"
+
+# Re-select the latest appropriate upstream ref by owner and repo.
+select owner repo:
+    @"{{root}}/scripts/github-study-repo.sh" select "{{owner}}/{{repo}}"
+
+# Verify readonly state and current ref by owner and repo.
+verify owner repo:
+    @"{{root}}/scripts/github-study-repo.sh" verify "{{owner}}/{{repo}}"
 
 # Update every managed checkout.
 update-all:
