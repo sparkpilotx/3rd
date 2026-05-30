@@ -17,15 +17,13 @@ PRE_RELEASE_PATTERN='(alpha|beta|rc|preview|pre|snapshot|nightly|dev|canary)'
 usage() {
   cat <<'USAGE'
 Usage:
-  github-study-repo.sh register OWNER/REPO
-  github-study-repo.sh unregister OWNER/REPO
-  github-study-repo.sh checkout OWNER/REPO
-  github-study-repo.sh update OWNER/REPO|PATH
-  github-study-repo.sh verify OWNER/REPO|PATH
+  github-study-repo.sh add OWNER/REPO
+  github-study-repo.sh remove OWNER/REPO
+  github-study-repo.sh sync OWNER/REPO
+  github-study-repo.sh verify OWNER/REPO
   github-study-repo.sh select OWNER/REPO
   github-study-repo.sh registry-init
-  github-study-repo.sh registry-list
-  github-study-repo.sh update-all
+  github-study-repo.sh sync-all
   github-study-repo.sh list
   github-study-repo.sh audit
 USAGE
@@ -133,28 +131,27 @@ registered_repo_keys() {
   registry_command list
 }
 
+registered_key_exists() {
+  local key="$1"
+  local keys
+  keys="$(registered_repo_keys)" || die "could not read Neo4j registry"
+  printf '%s\n' "$keys" | grep -Fxq "$key"
+}
+
+require_registered_key() {
+  local key
+  key="$(normalize_key "$1")"
+  if ! registered_key_exists "$key"; then
+    die "repo is not registered in Neo4j: $key"
+  fi
+  printf '%s\n' "$key"
+}
+
 key_for_repo_path() {
   local path="$1"
   local fetch_url
   fetch_url="$(git -C "$path" remote get-url origin)"
   normalize_key "$fetch_url"
-}
-
-repo_path_from_arg() {
-  local input="$1"
-  if [ -d "$input/.git" ]; then
-    cd "$input" && pwd
-    return
-  fi
-  if [ -d "$ROOT/$input/.git" ]; then
-    cd "$ROOT/$input" && pwd
-    return
-  fi
-  if [ -d "$CHECKOUT_ROOT/$input/.git" ]; then
-    cd "$CHECKOUT_ROOT/$input" && pwd
-    return
-  fi
-  path_for_key "$input"
 }
 
 default_branch_for_key() {
@@ -311,12 +308,16 @@ current_ref_label() {
   fi
 }
 
-verify_repo() {
+verify_checkout() {
   local path="$1"
+  local expected_key="${2:-}"
   [ -d "$path/.git" ] || die "not a git checkout: $path"
 
   local key
   key="$(key_for_repo_path "$path")"
+  if [ -n "$expected_key" ] && [ "$key" != "$expected_key" ]; then
+    die "checkout remote mismatch: expected $expected_key, got $key at $path"
+  fi
 
   printf 'local path: %s\n' "$path"
   printf 'repo key: %s\n' "$key"
@@ -328,24 +329,24 @@ verify_repo() {
   git -C "$path" remote -v | sed 's/^/  /'
 }
 
-register_key() {
+add_key() {
   local key
   key="$(normalize_key "$1")"
   ensure_reachable "$key"
   registry_upsert_key "$key"
-  printf 'registered: %s\n' "$key"
+  printf 'added: %s\n' "$key"
 }
 
-unregister_key() {
+remove_key() {
   local key
   key="$(normalize_key "$1")"
   registry_remove_key "$key"
-  printf 'unregistered: %s\n' "$key"
+  printf 'removed: %s\n' "$key"
 }
 
-checkout_repo() {
+sync_repo() {
   local key
-  key="$(normalize_key "$1")"
+  key="$(require_registered_key "$1")"
   local path
   path="$(path_for_key "$key")"
   local url
@@ -356,15 +357,20 @@ checkout_repo() {
   fi
 
   if [ -d "$path/.git" ]; then
-    verify_repo "$path"
-    return
+    local actual_key
+    actual_key="$(key_for_repo_path "$path")"
+    if [ "$actual_key" != "$key" ]; then
+      die "checkout remote mismatch: expected $key, got $actual_key at $path"
+    fi
+    stop_if_dirty "$path"
+    git -C "$path" fetch --prune --tags origin
+  else
+    ensure_reachable "$key"
+    mkdir -p "$(dirname "$path")"
+    git clone "$url" "$path"
+    git -C "$path" fetch --prune --tags origin
   fi
 
-  ensure_reachable "$key"
-  mkdir -p "$(dirname "$path")"
-  git clone "$url" "$path"
-  git -C "$path" fetch --prune --tags origin
-
   local selected kind ref reason
   selected="$(select_ref_for_repo "$key" "$path")"
   kind="${selected%% *}"
@@ -375,35 +381,20 @@ checkout_repo() {
   checkout_selected_ref "$path" "$kind" "$ref"
   disable_push "$path"
   printf 'selected because: %s\n' "$reason"
-  verify_repo "$path"
+  verify_checkout "$path" "$key"
 }
 
-update_repo() {
-  local path
-  path="$(repo_path_from_arg "$1")"
-  [ -d "$path/.git" ] || die "not a git checkout: $path"
-
-  stop_if_dirty "$path"
+verify_repo() {
   local key
-  key="$(key_for_repo_path "$path")"
-  git -C "$path" fetch --prune --tags origin
-
-  local selected kind ref reason
-  selected="$(select_ref_for_repo "$key" "$path")"
-  kind="${selected%% *}"
-  ref="${selected#* }"
-  reason="${ref#* }"
-  ref="${ref%% *}"
-
-  checkout_selected_ref "$path" "$kind" "$ref"
-  disable_push "$path"
-  printf 'selected because: %s\n' "$reason"
-  verify_repo "$path"
+  key="$(require_registered_key "$1")"
+  local path
+  path="$(path_for_key "$key")"
+  verify_checkout "$path" "$key"
 }
 
 select_repo() {
   local key
-  key="$(normalize_key "$1")"
+  key="$(require_registered_key "$1")"
   ensure_reachable "$key"
 
   local tag branch
@@ -424,15 +415,24 @@ select_repo() {
 list_repos() {
   registered_repo_keys | while IFS= read -r key; do
     [ -n "$key" ] || continue
-    printf '%s\t%s\n' "$key" "$(path_for_key "$key")"
+    local path status
+    path="$(path_for_key "$key")"
+    if [ -d "$path/.git" ]; then
+      status="present"
+    elif [ -e "$path" ]; then
+      status="blocked"
+    else
+      status="missing"
+    fi
+    printf '%s\t%s\t%s\n' "$key" "$status" "$path"
   done
 }
 
-update_all() {
+sync_all() {
   registered_repo_keys | while IFS= read -r key; do
     [ -n "$key" ] || continue
-    printf '==> updating %s\n' "$key"
-    update_repo "$(path_for_key "$key")"
+    printf '==> syncing %s\n' "$key"
+    sync_repo "$key"
   done
 }
 
@@ -464,10 +464,24 @@ audit_repos() {
       printf 'dirty worktree: %s\n%s\n' "$key" "$dirty"
       failed=1
     fi
-    if [ "$push_url" = "DISABLED" ] && [ -z "$dirty" ]; then
+    if [ "$actual_key" = "$key" ] && [ "$push_url" = "DISABLED" ] && [ -z "$dirty" ]; then
       printf 'ok: %s\n' "$key"
     fi
   done < <(registered_repo_keys)
+
+  if [ -d "$CHECKOUT_ROOT" ]; then
+    while IFS= read -r git_dir; do
+      local path actual_key
+      path="$(dirname "$git_dir")"
+      actual_key="$(key_for_repo_path "$path" 2>/dev/null || true)"
+      [ -n "$actual_key" ] || continue
+      if ! registered_key_exists "$actual_key"; then
+        printf 'unmanaged checkout: %s (%s)\n' "$actual_key" "$path"
+        failed=1
+      fi
+    done < <(find "$CHECKOUT_ROOT" -mindepth 3 -maxdepth 3 -type d -name .git 2>/dev/null)
+  fi
+
   return "$failed"
 }
 
@@ -478,25 +492,21 @@ main() {
   shift || true
 
   case "$command" in
-    register)
-      [ "$#" -eq 1 ] || die "register expects OWNER/REPO"
-      register_key "$1"
+    add)
+      [ "$#" -eq 1 ] || die "add expects OWNER/REPO"
+      add_key "$1"
       ;;
-    unregister)
-      [ "$#" -eq 1 ] || die "unregister expects OWNER/REPO"
-      unregister_key "$1"
+    remove)
+      [ "$#" -eq 1 ] || die "remove expects OWNER/REPO"
+      remove_key "$1"
       ;;
-    checkout)
-      [ "$#" -eq 1 ] || die "checkout expects OWNER/REPO"
-      checkout_repo "$1"
-      ;;
-    update)
-      [ "$#" -eq 1 ] || die "update expects OWNER/REPO or PATH"
-      update_repo "$1"
+    sync)
+      [ "$#" -eq 1 ] || die "sync expects OWNER/REPO"
+      sync_repo "$1"
       ;;
     verify)
-      [ "$#" -eq 1 ] || die "verify expects OWNER/REPO or PATH"
-      verify_repo "$(repo_path_from_arg "$1")"
+      [ "$#" -eq 1 ] || die "verify expects OWNER/REPO"
+      verify_repo "$1"
       ;;
     select)
       [ "$#" -eq 1 ] || die "select expects OWNER/REPO"
@@ -506,13 +516,9 @@ main() {
       [ "$#" -eq 0 ] || die "registry-init expects no arguments"
       registry_init
       ;;
-    registry-list)
-      [ "$#" -eq 0 ] || die "registry-list expects no arguments"
-      registered_repo_keys
-      ;;
-    update-all)
-      [ "$#" -eq 0 ] || die "update-all expects no arguments"
-      update_all
+    sync-all)
+      [ "$#" -eq 0 ] || die "sync-all expects no arguments"
+      sync_all
       ;;
     list)
       [ "$#" -eq 0 ] || die "list expects no arguments"

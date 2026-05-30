@@ -71,9 +71,7 @@ class Neo4jConfig(BaseModel):
 class RepositoryRecord(BaseModel):
     model_config = ConfigDict(frozen=True, strict=True)
     key: str
-    owner: str
-    repo: str
-    url: str
+    createdAt: str | None = None
 
 
 class RegistryResult(BaseModel):
@@ -122,14 +120,7 @@ def _repository_record_from_key(key: str) -> RepositoryRecord:
             suggestion="Pass a key in owner/repo form.",
         )
 
-    owner = key.split("/", maxsplit=1)[0]
-    repo = key.split("/", maxsplit=1)[1]
-    return RepositoryRecord(
-        key=key,
-        owner=owner,
-        repo=repo,
-        url=f"https://github.com/{key}.git",
-    )
+    return RepositoryRecord(key=key)
 
 
 def _database_identifier(database: str) -> str:
@@ -175,6 +166,12 @@ def write_initialize_registry(config: Neo4jConfig) -> RegistryResult:
                     REQUIRE repo.key IS UNIQUE
                     """
                 ).consume()
+                session.run(
+                    """
+                    MATCH (repo:GitHubRepository)
+                    REMOVE repo.owner, repo.repo, repo.url, repo.updatedAt
+                    """
+                ).consume()
         except Neo4jError as err:
             raise AppError(
                 ErrorCode.EXTERNAL,
@@ -203,15 +200,9 @@ def write_upsert_repository(
                 """
                 MERGE (repo:GitHubRepository {key: $key})
                 ON CREATE SET repo.createdAt = $now
-                SET repo.owner = $owner,
-                    repo.repo = $repo,
-                    repo.url = $url,
-                    repo.updatedAt = $now
+                REMOVE repo.owner, repo.repo, repo.url, repo.updatedAt
                 """,
                 key=record.key,
-                owner=record.owner,
-                repo=record.repo,
-                url=record.url,
                 now=now,
             ).consume()
     except Neo4jError as err:
@@ -268,16 +259,14 @@ def list_repositories(config: Neo4jConfig) -> list[RepositoryRecord]:
             result = session.run(
                 """
                 MATCH (repo:GitHubRepository)
-                RETURN repo.key AS key, repo.owner AS owner, repo.repo AS repo, repo.url AS url
+                RETURN repo.key AS key, repo.createdAt AS createdAt
                 ORDER BY repo.key
                 """
             )
             records = [
                 RepositoryRecord(
                     key=record["key"],
-                    owner=record["owner"],
-                    repo=record["repo"],
-                    url=record["url"],
+                    createdAt=record["createdAt"],
                 )
                 for record in result
             ]

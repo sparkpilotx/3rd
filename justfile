@@ -6,23 +6,19 @@ root := justfile_directory()
 default:
     @just --list
 
-# Register a GitHub repo key in the Neo4j collection.
-register-key key:
-    @"{{root}}/scripts/github-study-repo.sh" register "{{key}}"
+# Add a GitHub repo key to the Neo4j registry.
+add-key key:
+    @"{{root}}/scripts/github-study-repo.sh" add "{{key}}"
 
-# Remove a GitHub repo key from the Neo4j collection without deleting its checkout.
-unregister-key key:
-    @"{{root}}/scripts/github-study-repo.sh" unregister "{{key}}"
+# Remove a GitHub repo key from the Neo4j registry without deleting its local checkout.
+remove-key key:
+    @"{{root}}/scripts/github-study-repo.sh" remove "{{key}}"
 
-# Create a read-only local checkout for a GitHub repo key if it is missing.
-checkout-key key:
-    @"{{root}}/scripts/github-study-repo.sh" checkout "{{key}}"
+# Create or update the local checkout derived from a registered key.
+sync-key key:
+    @"{{root}}/scripts/github-study-repo.sh" sync "{{key}}"
 
-# Update an existing checkout from owner/repo or a local path.
-update-key key:
-    @"{{root}}/scripts/github-study-repo.sh" update "{{key}}"
-
-# Re-select the latest appropriate upstream ref without changing a checkout.
+# Select the latest appropriate upstream ref for a registered key without changing checkout.
 select-key key:
     @"{{root}}/scripts/github-study-repo.sh" select "{{key}}"
 
@@ -30,22 +26,18 @@ select-key key:
 registry-init:
     @"{{root}}/scripts/github-study-repo.sh" registry-init
 
-# List repository keys from the Neo4j registry.
-registry-list:
-    @"{{root}}/scripts/github-study-repo.sh" registry-list
-
-# Verify from owner/repo or a local path.
+# Verify the local checkout derived from a registered key.
 verify-key key:
     @"{{root}}/scripts/github-study-repo.sh" verify "{{key}}"
 
-# Update every managed checkout.
-update-all:
-    @"{{root}}/scripts/github-study-repo.sh" update-all
+# Create or update every local checkout derived from Neo4j registry keys.
+sync-all:
+    @"{{root}}/scripts/github-study-repo.sh" sync-all
 
-# List managed checkouts.
+# List registered keys and derived local checkout state.
 list:
     @"{{root}}/scripts/github-study-repo.sh" list
 
-# Audit dirty worktrees and push remotes.
+# Audit managed checkout consistency and unmanaged local checkouts.
 audit:
     @"{{root}}/scripts/github-study-repo.sh" audit

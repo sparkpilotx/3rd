@@ -3,6 +3,10 @@ This workspace stores read-only local study checkouts of GitHub repositories for
 
 Treat cloned repositories as upstream-owned source material. Do not push, commit, open PRs, or edit upstream repository files unless explicitly asked.
 
+Neo4j is the single source of truth for the managed GitHub repository set.
+Local repository directories are derived checkouts from Neo4j registry keys;
+they are cache/materialized state, not a second registry.
+
 ## Layout
 Use `owner/repo` as the canonical repository key.
 
@@ -21,6 +25,7 @@ Override the local storage root with `GITHUB_STUDY_CHECKOUT_ROOT`. The remote se
 - Preserve read-only upstream checkouts.
 - Report exact selected refs and remote URLs.
 - Ask before acting when version selection is ambiguous.
+- Register repos in Neo4j before syncing local checkouts.
 
 ## Read-Only Rules
 After every clone or update, ensure:
@@ -46,6 +51,6 @@ If there are no suitable GitHub Releases, use the newest stable-looking tag. If 
 
 If multiple stable release tracks exist, stop and explain the candidates before changing the checkout.
 
-GitHub API rate limits are not a reason to fall back from Releases to tags or branches. When release lookup is rate-limited, wait until the GitHub rate limit reset time and retry so `add`, `update`, `select`, and `update-all` keep consistent release-first selection semantics.
+GitHub API rate limits are not a reason to fall back from Releases to tags or branches. When release lookup is rate-limited, wait until the GitHub rate limit reset time and retry so `sync-key`, `select-key`, and `sync-all` keep consistent release-first selection semantics.
 
 If release lookup fails for a non-rate-limit GitHub API error, stop with a clear error instead of silently selecting a lower-priority ref.
