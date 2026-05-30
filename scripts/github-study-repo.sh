@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="github.com"
+REGISTRY_SCRIPT="$ROOT/scripts/github-study-registry.py"
 if [ -n "${GITHUB_STUDY_CHECKOUT_ROOT:-}" ]; then
   case "$GITHUB_STUDY_CHECKOUT_ROOT" in
     /*) CHECKOUT_ROOT="$GITHUB_STUDY_CHECKOUT_ROOT" ;;
@@ -20,6 +21,9 @@ Usage:
   github-study-repo.sh update OWNER/REPO|PATH
   github-study-repo.sh verify OWNER/REPO|PATH
   github-study-repo.sh select OWNER/REPO
+  github-study-repo.sh registry-init
+  github-study-repo.sh registry-import-existing
+  github-study-repo.sh registry-list
   github-study-repo.sh update-all
   github-study-repo.sh list
   github-study-repo.sh audit
@@ -101,6 +105,29 @@ url_for_key() {
   local key
   key="$(normalize_key "$1")"
   printf 'https://github.com/%s.git\n' "$key"
+}
+
+registry_command() {
+  require_cmd uv
+  NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "$REGISTRY_SCRIPT" "$@"
+}
+
+registry_init() {
+  registry_command init
+}
+
+registry_upsert_key() {
+  local key
+  key="$(normalize_key "$1")"
+  registry_command --json upsert "$key" >/dev/null
+}
+
+registered_repo_keys() {
+  registry_command list
+}
+
+registry_require_ready() {
+  registered_repo_keys >/dev/null
 }
 
 key_for_repo_path() {
@@ -301,6 +328,8 @@ verify_repo() {
 add_repo() {
   local key
   key="$(normalize_key "$1")"
+  registry_require_ready
+
   local path
   path="$(path_for_key "$key")"
   local url
@@ -312,6 +341,7 @@ add_repo() {
 
   if [ -d "$path/.git" ]; then
     update_repo "$path"
+    registry_upsert_key "$key"
     return
   fi
 
@@ -331,6 +361,7 @@ add_repo() {
   disable_push "$path"
   printf 'selected because: %s\n' "$reason"
   verify_repo "$path"
+  registry_upsert_key "$key"
 }
 
 update_repo() {
@@ -383,7 +414,7 @@ select_repo() {
   fi
 }
 
-managed_repo_paths() {
+filesystem_repo_paths() {
   if [ ! -d "$CHECKOUT_ROOT" ]; then
     return
   fi
@@ -398,29 +429,40 @@ managed_repo_paths() {
 }
 
 list_repos() {
-  managed_repo_paths | while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    printf '%s\t%s\n' "$(key_for_repo_path "$path")" "$path"
+  registered_repo_keys | while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    printf '%s\t%s\n' "$key" "$(path_for_key "$key")"
   done
 }
 
 update_all() {
-  managed_repo_paths | while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    printf '==> updating %s\n' "$(key_for_repo_path "$path")"
-    update_repo "$path"
+  registered_repo_keys | while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    printf '==> updating %s\n' "$key"
+    update_repo "$(path_for_key "$key")"
   done
 }
 
 audit_repos() {
   local failed=0
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    local key push_url dirty
-    key="$(key_for_repo_path "$path")"
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    local path push_url dirty actual_key
+    path="$(path_for_key "$key")"
+    if [ ! -d "$path/.git" ]; then
+      printf 'missing checkout: %s (%s)\n' "$key" "$path"
+      failed=1
+      continue
+    fi
+
+    actual_key="$(key_for_repo_path "$path")"
     push_url="$(git -C "$path" remote get-url --push origin 2>/dev/null || true)"
     dirty="$(git -C "$path" status --porcelain)"
 
+    if [ "$actual_key" != "$key" ]; then
+      printf 'repo key mismatch: %s (%s has remote %s)\n' "$key" "$path" "$actual_key"
+      failed=1
+    fi
     if [ "$push_url" != "DISABLED" ]; then
       printf 'push enabled: %s (%s)\n' "$key" "$push_url"
       failed=1
@@ -432,8 +474,18 @@ audit_repos() {
     if [ "$push_url" = "DISABLED" ] && [ -z "$dirty" ]; then
       printf 'ok: %s\n' "$key"
     fi
-  done < <(managed_repo_paths)
+  done < <(registered_repo_keys)
   return "$failed"
+}
+
+registry_import_existing() {
+  filesystem_repo_paths | while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    local key
+    key="$(key_for_repo_path "$path")"
+    registry_upsert_key "$key"
+    printf 'imported: %s\t%s\n' "$key" "$path"
+  done
 }
 
 main() {
@@ -458,6 +510,18 @@ main() {
     select)
       [ "$#" -eq 1 ] || die "select expects OWNER/REPO"
       select_repo "$1"
+      ;;
+    registry-init)
+      [ "$#" -eq 0 ] || die "registry-init expects no arguments"
+      registry_init
+      ;;
+    registry-import-existing)
+      [ "$#" -eq 0 ] || die "registry-import-existing expects no arguments"
+      registry_import_existing
+      ;;
+    registry-list)
+      [ "$#" -eq 0 ] || die "registry-list expects no arguments"
+      registered_repo_keys
       ;;
     update-all)
       [ "$#" -eq 0 ] || die "update-all expects no arguments"

@@ -26,6 +26,18 @@ update-key key:
 select owner repo:
     @"{{root}}/scripts/github-study-repo.sh" select "{{owner}}/{{repo}}"
 
+# Create the Neo4j registry database and constraints.
+registry-init:
+    @"{{root}}/scripts/github-study-repo.sh" registry-init
+
+# Import existing filesystem checkouts into the Neo4j registry.
+registry-import-existing:
+    @"{{root}}/scripts/github-study-repo.sh" registry-import-existing
+
+# List repository keys from the Neo4j registry.
+registry-list:
+    @"{{root}}/scripts/github-study-repo.sh" registry-list
+
 # Verify readonly state and current ref.
 verify owner repo:
     @"{{root}}/scripts/github-study-repo.sh" verify "{{owner}}/{{repo}}"
