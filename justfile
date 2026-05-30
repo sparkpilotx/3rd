@@ -30,10 +30,6 @@ select-key key:
 registry-init:
     @"{{root}}/scripts/github-study-repo.sh" registry-init
 
-# Import existing filesystem checkouts into the Neo4j registry.
-registry-import-existing:
-    @"{{root}}/scripts/github-study-repo.sh" registry-import-existing
-
 # List repository keys from the Neo4j registry.
 registry-list:
     @"{{root}}/scripts/github-study-repo.sh" registry-list
@@ -41,26 +37,6 @@ registry-list:
 # Verify from owner/repo or a local path.
 verify-key key:
     @"{{root}}/scripts/github-study-repo.sh" verify "{{key}}"
-
-# Add or update a GitHub repo as a read-only latest/stable study checkout.
-add owner repo:
-    @"{{root}}/scripts/github-study-repo.sh" add "{{owner}}/{{repo}}"
-
-# Add or update a repo from owner/repo, github.com/owner/repo, or a GitHub URL.
-add-key key:
-    @"{{root}}/scripts/github-study-repo.sh" add "{{key}}"
-
-# Update an existing checkout by owner and repo.
-update owner repo:
-    @"{{root}}/scripts/github-study-repo.sh" update "{{owner}}/{{repo}}"
-
-# Re-select the latest appropriate upstream ref by owner and repo.
-select owner repo:
-    @"{{root}}/scripts/github-study-repo.sh" select "{{owner}}/{{repo}}"
-
-# Verify readonly state and current ref by owner and repo.
-verify owner repo:
-    @"{{root}}/scripts/github-study-repo.sh" verify "{{owner}}/{{repo}}"
 
 # Update every managed checkout.
 update-all:

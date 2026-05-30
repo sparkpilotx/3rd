@@ -20,12 +20,10 @@ Usage:
   github-study-repo.sh register OWNER/REPO
   github-study-repo.sh unregister OWNER/REPO
   github-study-repo.sh checkout OWNER/REPO
-  github-study-repo.sh add OWNER/REPO
   github-study-repo.sh update OWNER/REPO|PATH
   github-study-repo.sh verify OWNER/REPO|PATH
   github-study-repo.sh select OWNER/REPO
   github-study-repo.sh registry-init
-  github-study-repo.sh registry-import-existing
   github-study-repo.sh registry-list
   github-study-repo.sh update-all
   github-study-repo.sh list
@@ -133,10 +131,6 @@ registry_remove_key() {
 
 registered_repo_keys() {
   registry_command list
-}
-
-registry_require_ready() {
-  registered_repo_keys >/dev/null
 }
 
 key_for_repo_path() {
@@ -384,18 +378,6 @@ checkout_repo() {
   verify_repo "$path"
 }
 
-add_repo() {
-  local key
-  key="$(normalize_key "$1")"
-  registry_require_ready
-  register_key "$key"
-  if [ -d "$(path_for_key "$key")/.git" ]; then
-    update_repo "$(path_for_key "$key")"
-  else
-    checkout_repo "$key"
-  fi
-}
-
 update_repo() {
   local path
   path="$(repo_path_from_arg "$1")"
@@ -437,20 +419,6 @@ select_repo() {
   fi
   branch="$(default_branch_for_key "$key")"
   printf 'branch %s default branch\n' "$branch"
-}
-
-filesystem_repo_paths() {
-  if [ ! -d "$CHECKOUT_ROOT" ]; then
-    return
-  fi
-  local owner_dir repo_dir
-  for owner_dir in "$CHECKOUT_ROOT"/*; do
-    [ -d "$owner_dir" ] || continue
-    for repo_dir in "$owner_dir"/*; do
-      [ -d "$repo_dir/.git" ] || continue
-      printf '%s\n' "$repo_dir"
-    done
-  done | sort
 }
 
 list_repos() {
@@ -503,16 +471,6 @@ audit_repos() {
   return "$failed"
 }
 
-registry_import_existing() {
-  filesystem_repo_paths | while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    local key
-    key="$(key_for_repo_path "$path")"
-    registry_upsert_key "$key"
-    printf 'imported: %s\t%s\n' "$key" "$path"
-  done
-}
-
 main() {
   require_cmd git
 
@@ -532,10 +490,6 @@ main() {
       [ "$#" -eq 1 ] || die "checkout expects OWNER/REPO"
       checkout_repo "$1"
       ;;
-    add)
-      [ "$#" -eq 1 ] || die "add expects OWNER/REPO"
-      add_repo "$1"
-      ;;
     update)
       [ "$#" -eq 1 ] || die "update expects OWNER/REPO or PATH"
       update_repo "$1"
@@ -551,10 +505,6 @@ main() {
     registry-init)
       [ "$#" -eq 0 ] || die "registry-init expects no arguments"
       registry_init
-      ;;
-    registry-import-existing)
-      [ "$#" -eq 0 ] || die "registry-import-existing expects no arguments"
-      registry_import_existing
       ;;
     registry-list)
       [ "$#" -eq 0 ] || die "registry-list expects no arguments"
