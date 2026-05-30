@@ -45,3 +45,7 @@ alpha beta rc preview pre snapshot nightly dev canary
 If there are no suitable GitHub Releases, use the newest stable-looking tag. If there are no stable tags, use the repository default branch from Git metadata.
 
 If multiple stable release tracks exist, stop and explain the candidates before changing the checkout.
+
+GitHub API rate limits are not a reason to fall back from Releases to tags or branches. When release lookup is rate-limited, wait until the GitHub rate limit reset time and retry so `add`, `update`, `select`, and `update-all` keep consistent release-first selection semantics.
+
+If release lookup fails for a non-rate-limit GitHub API error, stop with a clear error instead of silently selecting a lower-priority ref.

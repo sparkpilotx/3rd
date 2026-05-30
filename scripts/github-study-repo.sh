@@ -31,8 +31,43 @@ die() {
   exit 1
 }
 
+warn() {
+  printf 'warning: %s\n' "$*" >&2
+}
+
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+is_github_rate_limit_error() {
+  printf '%s\n' "$1" | grep -Eiq 'rate limit|rate-limit|abuse detection'
+}
+
+github_rate_limit_reset_epoch() {
+  gh api rate_limit --jq '[.resources.core.reset, .resources.graphql.reset, .rate.reset] | map(select(. != null)) | max' 2>/dev/null || true
+}
+
+wait_for_github_rate_limit() {
+  local key="$1"
+  local reset_epoch now_epoch wait_seconds
+
+  reset_epoch="$(github_rate_limit_reset_epoch)"
+  now_epoch="$(date +%s)"
+
+  case "$reset_epoch" in
+    ''|*[!0-9]*)
+      wait_seconds=60
+      ;;
+    *)
+      wait_seconds=$((reset_epoch - now_epoch + 5))
+      if [ "$wait_seconds" -lt 1 ]; then
+        wait_seconds=1
+      fi
+      ;;
+  esac
+
+  warn "GitHub API rate limit while listing releases for $key; waiting ${wait_seconds}s before retrying"
+  sleep "$wait_seconds"
 }
 
 normalize_key() {
@@ -113,13 +148,31 @@ latest_release_tag() {
     return 0
   fi
 
-  gh release list \
-    --repo "$key" \
-    --limit 100 \
-    --json tagName,isPrerelease,isDraft \
-    --jq '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' |
+  local err_file err_text output
+  while true; do
+    err_file="$(mktemp)"
+    if output="$(gh release list \
+      --repo "$key" \
+      --limit 100 \
+      --json tagName,isPrerelease,isDraft \
+      --jq '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' 2>"$err_file")"; then
+      rm -f "$err_file"
+      break
+    fi
+
+    err_text="$(cat "$err_file")"
+    rm -f "$err_file"
+    if is_github_rate_limit_error "$err_text"; then
+      wait_for_github_rate_limit "$key"
+      continue
+    fi
+
+    die "could not list GitHub releases for $key: $err_text"
+  done
+
+  printf '%s\n' "$output" |
     grep -Evi "$PRE_RELEASE_PATTERN" |
-    head -n 1
+    head -n 1 || true
 }
 
 latest_stable_local_tag() {
