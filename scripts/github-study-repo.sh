@@ -3,6 +3,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="github.com"
+if [ -n "${GITHUB_STUDY_CHECKOUT_ROOT:-}" ]; then
+  case "$GITHUB_STUDY_CHECKOUT_ROOT" in
+    /*) CHECKOUT_ROOT="$GITHUB_STUDY_CHECKOUT_ROOT" ;;
+    *) CHECKOUT_ROOT="$ROOT/$GITHUB_STUDY_CHECKOUT_ROOT" ;;
+  esac
+else
+  CHECKOUT_ROOT="$ROOT/$HOST"
+fi
 PRE_RELEASE_PATTERN='(alpha|beta|rc|preview|pre|snapshot|nightly|dev|canary)'
 
 usage() {
@@ -51,7 +59,7 @@ normalize_key() {
 path_for_key() {
   local key
   key="$(normalize_key "$1")"
-  printf '%s/%s/%s\n' "$ROOT" "$HOST" "$key"
+  printf '%s/%s\n' "$CHECKOUT_ROOT" "$key"
 }
 
 url_for_key() {
@@ -75,6 +83,10 @@ repo_path_from_arg() {
   fi
   if [ -d "$ROOT/$input/.git" ]; then
     cd "$ROOT/$input" && pwd
+    return
+  fi
+  if [ -d "$CHECKOUT_ROOT/$input/.git" ]; then
+    cd "$CHECKOUT_ROOT/$input" && pwd
     return
   fi
   path_for_key "$input"
@@ -319,11 +331,11 @@ select_repo() {
 }
 
 managed_repo_paths() {
-  if [ ! -d "$ROOT/$HOST" ]; then
+  if [ ! -d "$CHECKOUT_ROOT" ]; then
     return
   fi
   local owner_dir repo_dir
-  for owner_dir in "$ROOT/$HOST"/*; do
+  for owner_dir in "$CHECKOUT_ROOT"/*; do
     [ -d "$owner_dir" ] || continue
     for repo_dir in "$owner_dir"/*; do
       [ -d "$repo_dir/.git" ] || continue

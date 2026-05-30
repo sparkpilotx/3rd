@@ -6,11 +6,13 @@ Treat cloned repositories as upstream-owned source material. Do not push, commit
 ## Layout
 Use `owner/repo` as the canonical repository key.
 
-Store GitHub checkouts under:
+Store GitHub checkouts under this default local root:
 
 ```text
 github.com/<owner>/<repo>
 ```
+
+Override the local storage root with `GITHUB_STUDY_CHECKOUT_ROOT`. The remote service and accepted repo keys remain GitHub-only; this setting only changes where local checkouts are stored.
 
 ## Your Responsibilities to assist user interactive with you
 
