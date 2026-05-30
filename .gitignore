@@ -1,0 +1,26 @@
+# Managed upstream study checkouts. These are separate Git repositories.
+/github.com/
+
+# Local OS/editor noise.
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+
+# Local runtime/cache output.
+/.cache/
+/.tmp/
+/tmp/
+*.log
+
+# Python caches from local validation tooling.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Node/package-manager caches if harness tooling grows later.
+node_modules/
+.pnpm-store/
+.yarn/
