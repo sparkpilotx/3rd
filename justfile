@@ -6,38 +6,42 @@ root := justfile_directory()
 default:
     @just --list
 
-# Add a GitHub repo key to the Neo4j registry.
-add-key key:
-    @"{{root}}/scripts/github-study-repo.sh" add "{{key}}"
-
-# Remove a GitHub repo key from the Neo4j registry without deleting its local checkout.
-remove-key key:
-    @"{{root}}/scripts/github-study-repo.sh" remove "{{key}}"
-
-# Create or update the local checkout derived from a registered key.
-sync-key key:
-    @"{{root}}/scripts/github-study-repo.sh" sync "{{key}}"
-
-# Select the latest appropriate upstream ref for a registered key without changing checkout.
-select-key key:
-    @"{{root}}/scripts/github-study-repo.sh" select "{{key}}"
-
-# Create the Neo4j registry database and constraints.
+# Create the Neo4j source-of-truth database and constraints.
 registry-init:
-    @"{{root}}/scripts/github-study-repo.sh" registry-init
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/registry.py" init
 
-# Verify the local checkout derived from a registered key.
-verify-key key:
-    @"{{root}}/scripts/github-study-repo.sh" verify "{{key}}"
+# Add a GitHub repo key to the Neo4j source of truth.
+registry-add key:
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/registry.py" add "{{key}}"
 
-# Create or update every local checkout derived from Neo4j registry keys.
-sync-all:
-    @"{{root}}/scripts/github-study-repo.sh" sync-all
+# Remove a GitHub repo key from the Neo4j source of truth without deleting local files.
+registry-remove key:
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/registry.py" remove "{{key}}"
 
-# List registered keys and derived local checkout state.
-list:
-    @"{{root}}/scripts/github-study-repo.sh" list
+# List GitHub repo keys in the Neo4j source of truth.
+registry-list:
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/registry.py" list
 
-# Audit managed checkout consistency and unmanaged local checkouts.
-audit:
-    @"{{root}}/scripts/github-study-repo.sh" audit
+# List local checkout state derived from Neo4j.
+checkout-list:
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/checkout.py" list
+
+# Select the upstream ref for a registered key without changing local checkout.
+checkout-select key:
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/checkout.py" select "{{key}}"
+
+# Create or update the local checkout derived from one Neo4j key.
+checkout-sync key:
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/checkout.py" sync "{{key}}"
+
+# Verify the local checkout derived from one Neo4j key.
+checkout-verify key:
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/checkout.py" verify "{{key}}"
+
+# Create or update every local checkout derived from Neo4j keys.
+checkout-sync-all:
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/checkout.py" sync-all
+
+# Audit derived checkout consistency and unmanaged local checkouts.
+checkout-audit:
+    @NEO4J_DATABASE="${NEO4J_DATABASE:-workspace-3rd}" uv run "{{root}}/scripts/checkout.py" audit
